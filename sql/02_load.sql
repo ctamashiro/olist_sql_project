@@ -1,4 +1,3 @@
--- 02_load.sql: create raw tables and load from stage
 USE WAREHOUSE olist_wh;
 USE SCHEMA olist.raw;
 
@@ -51,7 +50,7 @@ COPY INTO products       FROM @olist_stage/olist_products_dataset.csv;
 COPY INTO sellers        FROM @olist_stage/olist_sellers_dataset.csv;
 COPY INTO category_translation FROM @olist_stage/product_category_name_translation.csv;
 
--- Sanity check: row counts
+
 SELECT 'customers' AS tbl, COUNT(*) AS n FROM customers
 UNION ALL SELECT 'geolocation', COUNT(*) FROM geolocation
 UNION ALL SELECT 'orders', COUNT(*) FROM orders

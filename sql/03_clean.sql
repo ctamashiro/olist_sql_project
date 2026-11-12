@@ -1,25 +1,22 @@
--- 03_clean.sql: profile raw data, then build cleaned staging tables
+
 USE WAREHOUSE olist_wh;
 USE DATABASE olist;
 CREATE SCHEMA IF NOT EXISTS olist.staging;
 
-/* ============================================================
-   PART A: PROFILING (run each query on its own and note findings)
-   ============================================================ */
 
--- A1. Primary key checks: total rows vs distinct keys (should match)
+
 SELECT 'orders' AS tbl, COUNT(*) AS total, COUNT(DISTINCT order_id) AS distinct_keys FROM raw.orders
 UNION ALL SELECT 'customers', COUNT(*), COUNT(DISTINCT customer_id) FROM raw.customers
 UNION ALL SELECT 'products', COUNT(*), COUNT(DISTINCT product_id) FROM raw.products
 UNION ALL SELECT 'sellers', COUNT(*), COUNT(DISTINCT seller_id) FROM raw.sellers
 UNION ALL SELECT 'order_reviews', COUNT(*), COUNT(DISTINCT review_id) FROM raw.order_reviews;
 
--- A2. The customer_id trap: customer_id is per ORDER, customer_unique_id is the real person
+
 SELECT COUNT(DISTINCT customer_id)        AS customer_ids,
        COUNT(DISTINCT customer_unique_id) AS real_customers
 FROM raw.customers;
 
--- A3. Orders by status, and how many are missing a delivery date
+
 SELECT order_status,
        COUNT(*) AS orders,
        COUNT_IF(order_delivered_customer_date IS NULL) AS missing_delivery_date

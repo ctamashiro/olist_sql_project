@@ -1,14 +1,6 @@
--- 05_analysis.sql: business questions answered from the star schema
 USE WAREHOUSE olist_wh;
 USE SCHEMA olist.analytics;
 
--- Note: "valid" orders exclude canceled/unavailable throughout.
--- Analysis window is Jan 2017 - Aug 2018 (2016 and Sep-Oct 2018 are too sparse).
-
-/* ------------------------------------------------------------
-   Q1. How is revenue trending month over month?
-   Skills: CTE, LAG(), running total with SUM() OVER
-   ------------------------------------------------------------ */
 WITH monthly AS (
   SELECT DATE_TRUNC('month', date_key) AS month,
          COUNT(*)                      AS orders,
@@ -28,12 +20,7 @@ SELECT
   ROUND(SUM(revenue) OVER (PARTITION BY YEAR(month) ORDER BY month), 2) AS ytd_revenue
 FROM monthly
 ORDER BY month;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q2. Which 10 categories drive the most revenue, and what share?
-   Skills: joins, aggregation, RATIO_TO_REPORT()
-   ------------------------------------------------------------ */
 SELECT
   p.category,
   ROUND(SUM(f.price), 2)                                   AS revenue,
@@ -45,12 +32,7 @@ WHERE f.order_status NOT IN ('canceled', 'unavailable')
 GROUP BY p.category
 ORDER BY revenue DESC
 LIMIT 10;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q3. What are the top 3 categories in each state?
-   Skills: RANK() with PARTITION BY, QUALIFY
-   ------------------------------------------------------------ */
 SELECT
   c.state,
   p.category,
@@ -63,12 +45,7 @@ WHERE f.order_status NOT IN ('canceled', 'unavailable')
 GROUP BY c.state, p.category
 QUALIFY rnk <= 3
 ORDER BY c.state, rnk;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q4. What % of customers ever come back for a second order?
-   Skills: CTE, COUNT_IF
-   ------------------------------------------------------------ */
 WITH cust AS (
   SELECT customer_key, COUNT(*) AS orders
   FROM fact_orders
@@ -80,13 +57,7 @@ SELECT
   COUNT_IF(orders > 1)                               AS repeat_customers,
   ROUND(100 * COUNT_IF(orders > 1) / COUNT(*), 2)    AS repeat_rate_pct
 FROM cust;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q5. Monthly cohort retention: of customers who first bought in
-       month X, what % bought again 1, 2, 3... months later?
-   Skills: multi-step CTEs, DATEDIFF, cohort analysis
-   ------------------------------------------------------------ */
 WITH orders AS (
   SELECT customer_key, DATE_TRUNC('month', date_key) AS order_month
   FROM fact_orders
@@ -121,12 +92,7 @@ FROM activity a
 JOIN cohort_size s ON a.cohort_month = s.cohort_month
 WHERE a.cohort_month BETWEEN '2017-01-01' AND '2018-08-01'
 ORDER BY a.cohort_month, a.month_number;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q6. RFM segmentation: who are the best customers, who's at risk?
-   Skills: NTILE(), CASE segmentation
-   ------------------------------------------------------------ */
 WITH max_date AS (
   SELECT MAX(date_key) AS last_date FROM fact_orders
 ),
@@ -161,13 +127,7 @@ SELECT
 FROM scored
 GROUP BY 1
 ORDER BY 1;
--- Note: frequency is left out of scoring because almost every customer has 1 order (see Q4).
--- Finding:
 
-/* ------------------------------------------------------------
-   Q7. Which states wait longest for deliveries, and how often late?
-   Skills: joins, HAVING, conditional averages
-   ------------------------------------------------------------ */
 SELECT
   c.state,
   COUNT(*)                                     AS delivered_orders,
@@ -179,12 +139,7 @@ WHERE o.is_completed_delivery
 GROUP BY c.state
 HAVING COUNT(*) >= 100
 ORDER BY avg_delivery_days DESC;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q8. Do late deliveries hurt review scores?
-   Skills: CASE bucketing, conditional aggregation
-   ------------------------------------------------------------ */
 SELECT
   CASE
     WHEN days_late <= -7 THEN '1. 7+ days early'
@@ -200,12 +155,7 @@ WHERE is_completed_delivery
   AND review_score IS NOT NULL
 GROUP BY 1
 ORDER BY 1;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q9. How concentrated is revenue among sellers? (Pareto check)
-   Skills: cumulative window SUM, share of total
-   ------------------------------------------------------------ */
 WITH seller_rev AS (
   SELECT seller_key, SUM(price) AS revenue
   FROM fact_order_items
@@ -225,12 +175,7 @@ SELECT
   COUNT_IF(cumulative_share <= 0.80)                        AS sellers_making_80pct,
   ROUND(100 * COUNT_IF(cumulative_share <= 0.80) / COUNT(*), 1) AS pct_of_sellers
 FROM ranked;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q10. How do customers pay, and do bigger orders use installments?
-   Skills: RATIO_TO_REPORT, aggregation
-   ------------------------------------------------------------ */
 SELECT
   main_payment_type,
   COUNT(*)                                          AS orders,
@@ -242,12 +187,7 @@ WHERE order_status NOT IN ('canceled', 'unavailable')
   AND main_payment_type IS NOT NULL
 GROUP BY main_payment_type
 ORDER BY orders DESC;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q11. When do people shop? (day of week x hour, for a heatmap)
-   Skills: date dimension join, time extraction
-   ------------------------------------------------------------ */
 SELECT
   d.day_name,
   HOUR(o.order_purchase_timestamp) AS hour_of_day,
@@ -258,12 +198,7 @@ WHERE o.order_status NOT IN ('canceled', 'unavailable')
 GROUP BY 1, 2
 ORDER BY orders DESC
 LIMIT 20;
--- Finding:
 
-/* ------------------------------------------------------------
-   Q12. Which states pay the most in shipping relative to price?
-   Skills: ratio metrics across joins
-   ------------------------------------------------------------ */
 SELECT
   c.state,
   ROUND(AVG(f.freight_value), 2)                     AS avg_freight,
@@ -273,4 +208,3 @@ JOIN dim_customer c ON f.customer_key = c.customer_key
 WHERE f.order_status NOT IN ('canceled', 'unavailable')
 GROUP BY c.state
 ORDER BY freight_pct_of_price DESC;
--- Finding:

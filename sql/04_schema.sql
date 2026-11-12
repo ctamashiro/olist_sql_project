@@ -2,12 +2,7 @@
 USE WAREHOUSE olist_wh;
 USE DATABASE olist;
 
-/* ============================================================
-   DIMENSIONS
-   ============================================================ */
 
--- dim_customer: one row per REAL customer (customer_unique_id)
--- Location = where they lived on their most recent order
 CREATE OR REPLACE TABLE analytics.dim_customer AS
 WITH customer_orders AS (
   SELECT c.customer_unique_id, c.zip_prefix, c.city, c.state,
@@ -26,13 +21,11 @@ SELECT
 FROM customer_orders co
 GROUP BY co.customer_unique_id;
 
--- Add coordinates for mapping
 CREATE OR REPLACE TABLE analytics.dim_customer AS
 SELECT d.*, g.lat, g.lng
 FROM analytics.dim_customer d
 LEFT JOIN staging.geolocation g ON d.zip_prefix = g.zip_prefix;
 
--- dim_product
 CREATE OR REPLACE TABLE analytics.dim_product AS
 SELECT
   product_id AS product_key,
@@ -42,7 +35,6 @@ SELECT
   length_cm * height_cm * width_cm AS volume_cm3
 FROM staging.products;
 
--- dim_seller (with coordinates)
 CREATE OR REPLACE TABLE analytics.dim_seller AS
 SELECT
   s.seller_id AS seller_key,
@@ -54,7 +46,6 @@ SELECT
 FROM staging.sellers s
 LEFT JOIN staging.geolocation g ON s.zip_prefix = g.zip_prefix;
 
--- dim_date: generated, one row per day 2016-2018
 CREATE OR REPLACE TABLE analytics.dim_date AS
 WITH days AS (
   SELECT DATEADD(day, ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1, '2016-01-01'::DATE) AS date_day
@@ -72,11 +63,7 @@ SELECT
   DAYNAME(date_day) IN ('Sat', 'Sun') AS is_weekend
 FROM days;
 
-/* ============================================================
-   FACTS
-   ============================================================ */
 
--- fact_order_items: grain = one row per item sold
 CREATE OR REPLACE TABLE analytics.fact_order_items AS
 SELECT
   i.order_id,
@@ -93,9 +80,7 @@ FROM staging.order_items i
 JOIN staging.orders o    ON i.order_id = o.order_id
 JOIN staging.customers c ON o.customer_id = c.customer_id;
 
--- fact_orders: grain = one row per order
--- Payments are aggregated HERE, not joined to items, because an order can have
--- several payments AND several items. Joining both would double-count revenue.
+
 CREATE OR REPLACE TABLE analytics.fact_orders AS
 WITH items AS (
   SELECT order_id,
@@ -136,12 +121,6 @@ LEFT JOIN items i               ON o.order_id = i.order_id
 LEFT JOIN payments p            ON o.order_id = p.order_id
 LEFT JOIN staging.order_reviews r ON o.order_id = r.order_id;
 
-/* ============================================================
-   VALIDATION
-   ============================================================ */
-
--- V1. Row counts: fact_order_items should equal staging.order_items (~112.6K),
---     fact_orders should equal staging.orders (~99.4K)
 SELECT 'fact_order_items' AS tbl, COUNT(*) AS n FROM analytics.fact_order_items
 UNION ALL SELECT 'fact_orders', COUNT(*) FROM analytics.fact_orders
 UNION ALL SELECT 'dim_customer', COUNT(*) FROM analytics.dim_customer
@@ -149,12 +128,12 @@ UNION ALL SELECT 'dim_product', COUNT(*) FROM analytics.dim_product
 UNION ALL SELECT 'dim_seller', COUNT(*) FROM analytics.dim_seller
 UNION ALL SELECT 'dim_date', COUNT(*) FROM analytics.dim_date;
 
--- V2. Revenue ties out: both numbers should match exactly
+
 SELECT
   (SELECT SUM(price) FROM staging.order_items)       AS staging_revenue,
   (SELECT SUM(price) FROM analytics.fact_order_items) AS fact_revenue;
 
--- V3. Orphan keys: every fact key should exist in its dimension (all should be 0)
+
 SELECT
   COUNT_IF(c.customer_key IS NULL) AS missing_customers,
   COUNT_IF(p.product_key IS NULL)  AS missing_products,
